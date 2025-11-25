@@ -1,4 +1,4 @@
 Flask
 twilio
+wikipedia
 requests
-beautifulsoup4
