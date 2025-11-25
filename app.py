@@ -1,82 +1,67 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 import wikipedia
-from googlesearch import search
-import re
-
-# Configurações iniciais
-wikipedia.set_lang("pt")  # Define o Wikipedia em português
+import requests
+from bs4 import BeautifulSoup
+import os
 
 app = Flask(__name__)
 
-# Dados do criador
-CRIADOR = {
-    "nome": "António Zacarias Manuel",
-    "telefone": "948404462",
-    "email": "azmanuel@gmail.com",
-    "pais": "Angola",
-    "pais_pais": "Angola",
-    "pais_parentes": "filho de Domingos António Manuel e Jany Paulo Manuel",
-    "idade": 17
-}
+# Configurações do Wikipedia para português
+wikipedia.set_lang("pt")
 
-def busca_google(query, max_results=3):
+def buscar_internet(pergunta):
+    """Busca na Wikipedia; se não encontrar, tenta uma busca no Google."""
     try:
-        resultados = []
-        for url in search(query, num_results=max_results):
-            resultados.append(url)
-        if resultados:
-            return "Aqui estão alguns links que podem ajudar:\n" + "\n".join(resultados)
-        else:
-            return "Desculpe, não encontrei informações relevantes no Google."
+        resultado = wikipedia.summary(pergunta, sentences=2)
+        return resultado
     except Exception:
-        return "Desculpe, ocorreu um erro ao buscar informações no Google."
+        # Busca no Google usando requests e BeautifulSoup (simples)
+        try:
+            query = pergunta.replace(" ", "+")
+            url = f"https://www.google.com/search?q={query}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+            }
+            resp = requests.get(url, headers=headers)
+            soup = BeautifulSoup(resp.text, "lxml")
+            snippet = soup.find("div", {"class": "BNeawe s3v9rd AP7Wnd"})
+            if snippet:
+                return snippet.text
+            return "Não consegui encontrar uma resposta online."
+        except:
+            return "Não consegui acessar a internet."
 
-def busca_wikipedia(query):
-    try:
-        resumo = wikipedia.summary(query, sentences=2)
-        # Limpa quebras de linha e excesso de espaços
-        resumo = re.sub(r'\s+', ' ', resumo)
-        return resumo
-    except wikipedia.exceptions.DisambiguationError as e:
-        return f"Existem várias opções para '{query}', tente ser mais específico."
-    except wikipedia.exceptions.PageError:
-        return None
-    except Exception:
-        return None
-
-@app.route("/sms", methods=['POST'])
+@app.route("/sms", methods=["POST"])
 def sms_reply():
-    mensagem = request.form.get('Body', '').strip()
+    """Função principal que responde às mensagens WhatsApp/SMS."""
+    mensagem = request.form.get("Body", "").strip().lower()
     resp = MessagingResponse()
-
-    # Mensagem educada padrão se não conseguir processar
-    resposta = "Desculpe, não consegui entender. Pode perguntar novamente de forma diferente?"
-
-    # Identificação do criador
-    if "quem te criou" in mensagem.lower():
-        resposta = (
-            f"Fui criado por {CRIADOR['nome']}, "
-            f"telefone: {CRIADOR['telefone']}, "
-            f"email: {CRIADOR['email']}, "
-            f"{CRIADOR['pais_parentes']}, "
-            f"{CRIADOR['idade']} anos de idade."
+    
+    if not mensagem:
+        resp.message("Por favor, envie uma pergunta.")
+        return str(resp)
+    
+    # Respostas personalizadas
+    if "quem te criou" in mensagem:
+        resp.message(
+            "Fui criado por António Zacarias Manuel no dia 25/11/2025. "
+            "Mais detalhes: António Zacarias Manuel, telefone: 948404462, "
+            "email: azmanuel@gmail.com, filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
         )
-    # Informações privadas/legal
-    elif any(x in mensagem.lower() for x in ["cpf", "nif", "documento", "senha", "informação legal"]):
-        resposta = "Desculpe, não posso fornecer informações privadas ou legais."
-    else:
-        # Tenta Wikipedia primeiro
-        wiki_res = busca_wikipedia(mensagem)
-        if wiki_res:
-            resposta = wiki_res
-        else:
-            # Busca no Google se não encontrou no Wikipedia
-            resposta = busca_google(mensagem)
-
+        return str(resp)
+    
+    if "ligue a internet" in mensagem or "está offline" in mensagem:
+        resp.message("No momento não consigo acessar a internet. Por favor, verifique sua conexão.")
+        return str(resp)
+    
+    # Resposta padrão usando busca
+    resposta = buscar_internet(mensagem)
     resp.message(resposta)
     return str(resp)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+    # Porta dinâmica para Render
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
 
