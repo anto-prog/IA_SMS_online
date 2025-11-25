@@ -1,51 +1,53 @@
-from flask import Flask, request
+from flask import Flask, request, Response
 from twilio.twiml.messaging_response import MessagingResponse
 import wikipedia
 from bs4 import BeautifulSoup
-import os
 
 app = Flask(__name__)
 
-# Configuração do Wikipedia para evitar warnings
-wikipedia.set_lang("pt")  # ou "en" se preferir inglês
+# Configura Wikipedia para usar html.parser
+wikipedia.set_lang("pt")
 
 @app.route("/sms", methods=['POST'])
 def sms_reply():
-    incoming_msg = request.form.get('Body', '').strip()
-    resp = MessagingResponse()
-    
-    # Verifica se há internet
     try:
-        # Resposta padrão para perguntas pessoais
-        if "quem te criou" in incoming_msg.lower():
-            resposta = (
-                "Fui criado por António Zacarias Manuel. "
-                "Mais detalhes: telefone 948404462, email azmanuel@gmail.com, "
-                "filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
+        incoming_msg = request.values.get('Body', '').strip()
+        from_number = request.values.get('From', '')
+        print(f"[INFO] Mensagem recebida de {from_number}: {incoming_msg}")
+
+        resp = MessagingResponse()
+        msg = resp.message()
+
+        # Resposta padrão educada
+        if not incoming_msg:
+            msg.body("Não recebi nenhuma mensagem. Por favor, envie algo.")
+        elif "quem te criou" in incoming_msg.lower():
+            msg.body(
+                "Foi criado por António Zacarias Manuel. "
+                "Telefone: 948404462, Email: azmanuel@gmail.com, "
+                "Filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
             )
-            resp.message(resposta)
-        
-        # Resposta padrão simples
-        elif incoming_msg.lower() in ["oi", "olá", "ola"]:
-            resp.message("Oi! Estou bem e você?")
-        
-        # Busca na Wikipedia
+        elif "mess" in incoming_msg.lower():  # exemplo de perguntas sobre Messi
+            msg.body("Messi é um jogador de futebol argentino muito famoso.")
         else:
+            # Tenta buscar no Wikipedia
             try:
-                resultado = wikipedia.summary(incoming_msg, sentences=2)
-                # Limpeza do HTML
-                clean_result = BeautifulSoup(resultado, features="html.parser").text
-                resp.message(clean_result)
+                result = wikipedia.summary(incoming_msg, sentences=2)
+                msg.body(result)
             except wikipedia.exceptions.DisambiguationError as e:
-                resp.message(f"Existe mais de uma opção para '{incoming_msg}'. Tente ser mais específico.")
+                msg.body(f"Existem várias opções para '{incoming_msg}': {e.options[:5]}")
             except wikipedia.exceptions.PageError:
-                resp.message("Desculpe, não encontrei informações sobre isso.")
-    
+                msg.body(f"Desculpe, não encontrei informações sobre '{incoming_msg}'.")
+            except Exception as e:
+                print(f"[ERRO] Wikipedia ou outro erro: {e}")
+                msg.body("Não consegui processar a sua mensagem agora, tente novamente.")
+
+        print(f"[INFO] Respondendo: {msg.body}")
+        return str(resp)
     except Exception as e:
-        resp.message("Parece que não estou conectado à internet ou ocorreu um erro. Por favor, verifique a conexão.")
-    
-    return str(resp)
+        print(f"[ERRO] Falha geral no /sms: {e}")
+        return Response("Erro interno", status=500)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    print("Servidor Flask rodando...")
+    app.run(host="0.0.0.0", port=5000)
