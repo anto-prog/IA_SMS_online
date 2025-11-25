@@ -1,5 +1,5 @@
-Flask
-twilio
-requests
-beautifulsoup4
-wikipedia
+Flask==2.3.3
+twilio==8.12.2
+wikipedia==1.4.0
+requests==2.32.0
+beautifulsoup4==4.12.2
