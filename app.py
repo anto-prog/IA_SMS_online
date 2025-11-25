@@ -7,7 +7,7 @@ import os
 
 app = Flask(__name__)
 
-# Configurações do Wikipedia para português
+# Configurações do Wikipedia
 wikipedia.set_lang("pt")
 
 def buscar_internet(pergunta):
@@ -16,7 +16,7 @@ def buscar_internet(pergunta):
         resultado = wikipedia.summary(pergunta, sentences=2)
         return resultado
     except Exception:
-        # Busca no Google usando requests e BeautifulSoup (simples)
+        # Busca no Google usando requests e BeautifulSoup
         try:
             query = pergunta.replace(" ", "+")
             url = f"https://www.google.com/search?q={query}"
@@ -24,7 +24,7 @@ def buscar_internet(pergunta):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
             }
             resp = requests.get(url, headers=headers)
-            soup = BeautifulSoup(resp.text, "lxml")
+            soup = BeautifulSoup(resp.text, "html.parser")  # <-- mudou aqui
             snippet = soup.find("div", {"class": "BNeawe s3v9rd AP7Wnd"})
             if snippet:
                 return snippet.text
@@ -61,7 +61,5 @@ def sms_reply():
     return str(resp)
 
 if __name__ == "__main__":
-    # Porta dinâmica para Render
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
