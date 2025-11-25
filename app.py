@@ -1,63 +1,49 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
 import wikipedia
-import requests
 from bs4 import BeautifulSoup
 import os
 
 app = Flask(__name__)
 
-# Configurações do Wikipedia
-wikipedia.set_lang("pt")
+# Configuração do Wikipedia para evitar warnings
+wikipedia.set_lang("pt")  # ou "en" se preferir inglês
 
-def buscar_internet(pergunta):
-    """Busca na Wikipedia; se não encontrar, tenta uma busca no Google."""
-    try:
-        resultado = wikipedia.summary(pergunta, sentences=2)
-        return resultado
-    except Exception:
-        # Busca no Google usando requests e BeautifulSoup
-        try:
-            query = pergunta.replace(" ", "+")
-            url = f"https://www.google.com/search?q={query}"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-            }
-            resp = requests.get(url, headers=headers)
-            soup = BeautifulSoup(resp.text, "html.parser")  # <-- mudou aqui
-            snippet = soup.find("div", {"class": "BNeawe s3v9rd AP7Wnd"})
-            if snippet:
-                return snippet.text
-            return "Não consegui encontrar uma resposta online."
-        except:
-            return "Não consegui acessar a internet."
-
-@app.route("/sms", methods=["POST"])
+@app.route("/sms", methods=['POST'])
 def sms_reply():
-    """Função principal que responde às mensagens WhatsApp/SMS."""
-    mensagem = request.form.get("Body", "").strip().lower()
+    incoming_msg = request.form.get('Body', '').strip()
     resp = MessagingResponse()
     
-    if not mensagem:
-        resp.message("Por favor, envie uma pergunta.")
-        return str(resp)
+    # Verifica se há internet
+    try:
+        # Resposta padrão para perguntas pessoais
+        if "quem te criou" in incoming_msg.lower():
+            resposta = (
+                "Fui criado por António Zacarias Manuel. "
+                "Mais detalhes: telefone 948404462, email azmanuel@gmail.com, "
+                "filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
+            )
+            resp.message(resposta)
+        
+        # Resposta padrão simples
+        elif incoming_msg.lower() in ["oi", "olá", "ola"]:
+            resp.message("Oi! Estou bem e você?")
+        
+        # Busca na Wikipedia
+        else:
+            try:
+                resultado = wikipedia.summary(incoming_msg, sentences=2)
+                # Limpeza do HTML
+                clean_result = BeautifulSoup(resultado, features="html.parser").text
+                resp.message(clean_result)
+            except wikipedia.exceptions.DisambiguationError as e:
+                resp.message(f"Existe mais de uma opção para '{incoming_msg}'. Tente ser mais específico.")
+            except wikipedia.exceptions.PageError:
+                resp.message("Desculpe, não encontrei informações sobre isso.")
     
-    # Respostas personalizadas
-    if "quem te criou" in mensagem:
-        resp.message(
-            "Fui criado por António Zacarias Manuel no dia 25/11/2025. "
-            "Mais detalhes: António Zacarias Manuel, telefone: 948404462, "
-            "email: azmanuel@gmail.com, filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
-        )
-        return str(resp)
+    except Exception as e:
+        resp.message("Parece que não estou conectado à internet ou ocorreu um erro. Por favor, verifique a conexão.")
     
-    if "ligue a internet" in mensagem or "está offline" in mensagem:
-        resp.message("No momento não consigo acessar a internet. Por favor, verifique sua conexão.")
-        return str(resp)
-    
-    # Resposta padrão usando busca
-    resposta = buscar_internet(mensagem)
-    resp.message(resposta)
     return str(resp)
 
 if __name__ == "__main__":
