@@ -1,72 +1,54 @@
 from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import requests
-from bs4 import BeautifulSoup
 import wikipedia
+import requests
 
 app = Flask(__name__)
 
-# Configurações básicas
-CREATOR_INFO = (
-    "Foi criado por António Zacarias Manuel em 25/11/2025. "
-    "Detalhes: António Zacarias Manuel, número 948404462, "
-    "email azmanuel@gmail.com, filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
-)
+# Função principal para processar mensagens
+def process_message(message):
+    message_lower = message.lower()
 
-def search_wikipedia(query):
+    # Respostas sobre o criador
+    if "quem te criou" in message_lower:
+        return ("Fui criado por António Zacarias Manuel "
+                "em 25/11/2025. Detalhes: telefone 948404462, "
+                "email azmanuel@gmail.com, filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos de idade.")
+
+    # Resposta genérica sobre Wikipedia
     try:
-        wikipedia.set_lang("pt")
-        summary = wikipedia.summary(query, sentences=2)
-        return summary
+        if len(message.split()) > 1:
+            summary = wikipedia.summary(message, sentences=2, auto_suggest=True)
+            return summary
+    except wikipedia.exceptions.DisambiguationError as e:
+        return f"Existem várias opções para '{message}': {e.options[:5]}"
+    except wikipedia.exceptions.PageError:
+        pass
     except Exception:
-        return None
+        pass
 
-def search_google(query):
-    try:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        url = f"https://www.google.com/search?q={query}"
-        r = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(r.text, "html.parser")
-        results = soup.find_all("div", class_="BNeawe s3v9rd AP7Wnd")
-        for result in results[:3]:
-            return result.get_text()
-        return "Não consegui encontrar nada relevante."
-    except Exception:
-        return "Não consegui acessar a internet. Conecte-se e tente novamente."
+    # Resposta padrão caso não encontre info
+    return "Desculpe, não consegui encontrar informações sobre isso. Pergunta outra coisa!"
 
-@app.route("/sms", methods=['POST'])
+@app.route("/sms", methods=["POST"])
 def sms_reply():
-    msg = request.values.get('Body', '').strip().lower()
+    # Pega o texto enviado pelo WhatsApp/Twilio
+    incoming_msg = request.form.get('Body', '')
+    
+    if not incoming_msg:
+        resp = MessagingResponse()
+        resp.message("Erro: não recebi nenhuma mensagem. Por favor, envie texto.")
+        return str(resp)
+
+    # Processa a mensagem
+    reply_text = process_message(incoming_msg)
+
+    # Cria resposta Twilio
     resp = MessagingResponse()
-
-    if not msg:
-        resp.message("Recebi uma mensagem vazia. Pode escrever algo para eu responder.")
-        return str(resp)
-
-    # Respostas especiais
-    if "quem te criou" in msg:
-        resp.message(CREATOR_INFO)
-        return str(resp)
-    elif "oi" in msg or "olá" in msg:
-        resp.message("Oi! Estou bem, e você? 😊")
-        return str(resp)
-    elif "ligar a internet" in msg or "offline" in msg:
-        resp.message("Parece que estou offline. Conecte a internet para que eu possa responder corretamente.")
-        return str(resp)
-
-    # Tenta buscar no Wikipedia primeiro
-    resposta = search_wikipedia(msg)
-    if resposta:
-        resp.message(resposta)
-        return str(resp)
-
-    # Se não encontrar, tenta buscar no Google
-    resposta_google = search_google(msg)
-    resp.message(resposta_google)
+    resp.message(reply_text)
     return str(resp)
 
 if __name__ == "__main__":
-    # Render exige bind em 0.0.0.0 e porta de ambiente
     import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
