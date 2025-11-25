@@ -1,53 +1,72 @@
-from flask import Flask, request, Response
+from flask import Flask, request
 from twilio.twiml.messaging_response import MessagingResponse
-import wikipedia
+import requests
 from bs4 import BeautifulSoup
+import wikipedia
 
 app = Flask(__name__)
 
-# Configura Wikipedia para usar html.parser
-wikipedia.set_lang("pt")
+# Configurações básicas
+CREATOR_INFO = (
+    "Foi criado por António Zacarias Manuel em 25/11/2025. "
+    "Detalhes: António Zacarias Manuel, número 948404462, "
+    "email azmanuel@gmail.com, filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
+)
+
+def search_wikipedia(query):
+    try:
+        wikipedia.set_lang("pt")
+        summary = wikipedia.summary(query, sentences=2)
+        return summary
+    except Exception:
+        return None
+
+def search_google(query):
+    try:
+        headers = {"User-Agent": "Mozilla/5.0"}
+        url = f"https://www.google.com/search?q={query}"
+        r = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(r.text, "html.parser")
+        results = soup.find_all("div", class_="BNeawe s3v9rd AP7Wnd")
+        for result in results[:3]:
+            return result.get_text()
+        return "Não consegui encontrar nada relevante."
+    except Exception:
+        return "Não consegui acessar a internet. Conecte-se e tente novamente."
 
 @app.route("/sms", methods=['POST'])
 def sms_reply():
-    try:
-        incoming_msg = request.values.get('Body', '').strip()
-        from_number = request.values.get('From', '')
-        print(f"[INFO] Mensagem recebida de {from_number}: {incoming_msg}")
+    msg = request.values.get('Body', '').strip().lower()
+    resp = MessagingResponse()
 
-        resp = MessagingResponse()
-        msg = resp.message()
-
-        # Resposta padrão educada
-        if not incoming_msg:
-            msg.body("Não recebi nenhuma mensagem. Por favor, envie algo.")
-        elif "quem te criou" in incoming_msg.lower():
-            msg.body(
-                "Foi criado por António Zacarias Manuel. "
-                "Telefone: 948404462, Email: azmanuel@gmail.com, "
-                "Filho de Domingos António Manuel e Jany Paulo Manuel, 17 anos."
-            )
-        elif "mess" in incoming_msg.lower():  # exemplo de perguntas sobre Messi
-            msg.body("Messi é um jogador de futebol argentino muito famoso.")
-        else:
-            # Tenta buscar no Wikipedia
-            try:
-                result = wikipedia.summary(incoming_msg, sentences=2)
-                msg.body(result)
-            except wikipedia.exceptions.DisambiguationError as e:
-                msg.body(f"Existem várias opções para '{incoming_msg}': {e.options[:5]}")
-            except wikipedia.exceptions.PageError:
-                msg.body(f"Desculpe, não encontrei informações sobre '{incoming_msg}'.")
-            except Exception as e:
-                print(f"[ERRO] Wikipedia ou outro erro: {e}")
-                msg.body("Não consegui processar a sua mensagem agora, tente novamente.")
-
-        print(f"[INFO] Respondendo: {msg.body}")
+    if not msg:
+        resp.message("Recebi uma mensagem vazia. Pode escrever algo para eu responder.")
         return str(resp)
-    except Exception as e:
-        print(f"[ERRO] Falha geral no /sms: {e}")
-        return Response("Erro interno", status=500)
+
+    # Respostas especiais
+    if "quem te criou" in msg:
+        resp.message(CREATOR_INFO)
+        return str(resp)
+    elif "oi" in msg or "olá" in msg:
+        resp.message("Oi! Estou bem, e você? 😊")
+        return str(resp)
+    elif "ligar a internet" in msg or "offline" in msg:
+        resp.message("Parece que estou offline. Conecte a internet para que eu possa responder corretamente.")
+        return str(resp)
+
+    # Tenta buscar no Wikipedia primeiro
+    resposta = search_wikipedia(msg)
+    if resposta:
+        resp.message(resposta)
+        return str(resp)
+
+    # Se não encontrar, tenta buscar no Google
+    resposta_google = search_google(msg)
+    resp.message(resposta_google)
+    return str(resp)
 
 if __name__ == "__main__":
-    print("Servidor Flask rodando...")
-    app.run(host="0.0.0.0", port=5000)
+    # Render exige bind em 0.0.0.0 e porta de ambiente
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
